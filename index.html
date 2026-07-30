@@ -1,0 +1,1067 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hand Motion Capture | Shou Bu Dong Zuo Bu Zhuo</title>
+    <meta
+      name="description"
+      content="Standalone bilingual hand motion capture with #33B1FF skeleton lines."
+    />
+    <style>
+      :root {
+        --background: #080a0d;
+        --foreground: #f4f7fb;
+        --muted: #9ca6b5;
+        --panel: #11151b;
+        --panel-strong: #171d25;
+        --accent: #33b1ff;
+        --warm: #ffcb74;
+        --danger: #ff6b6b;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        min-width: 320px;
+        background: var(--background);
+      }
+
+      body {
+        margin: 0;
+        background: var(--background);
+        color: var(--foreground);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      button {
+        border: 0;
+        font: inherit;
+      }
+
+      .capture-page {
+        min-height: 100vh;
+        padding: 24px;
+        background:
+          linear-gradient(180deg, rgba(255, 203, 116, 0.08), transparent 34%),
+          radial-gradient(
+            circle at 20% 0%,
+            rgba(51, 177, 255, 0.16),
+            transparent 28%
+          ),
+          var(--background);
+      }
+
+      .capture-shell {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 320px;
+        gap: 18px;
+        margin: 0 auto;
+        max-width: 1260px;
+        min-height: calc(100vh - 48px);
+      }
+
+      .capture-main,
+      .capture-side {
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(17, 21, 27, 0.86);
+        box-shadow: 0 18px 56px rgba(0, 0, 0, 0.26);
+      }
+
+      .capture-main {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        overflow: hidden;
+        border-radius: 8px;
+      }
+
+      .capture-topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .capture-title {
+        min-width: 0;
+      }
+
+      .capture-title h1 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 760;
+        line-height: 1.1;
+      }
+
+      .capture-title p {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.4;
+      }
+
+      .top-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .mode-toggle,
+      .language-toggle {
+        display: inline-grid;
+        gap: 4px;
+        padding: 4px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        background: #0a0d12;
+      }
+
+      .mode-toggle {
+        grid-template-columns: repeat(2, minmax(82px, 1fr));
+      }
+
+      .language-toggle {
+        grid-template-columns: repeat(2, 46px);
+      }
+
+      .mode-toggle button,
+      .language-toggle button {
+        min-height: 38px;
+        border-radius: 6px;
+        color: var(--muted);
+        background: transparent;
+        cursor: pointer;
+      }
+
+      .mode-toggle button[aria-pressed="true"],
+      .language-toggle button[aria-pressed="true"] {
+        color: #03121f;
+        background: var(--accent);
+        font-weight: 720;
+      }
+
+      .capture-stage {
+        position: relative;
+        display: grid;
+        flex: 1;
+        min-height: 420px;
+        overflow: hidden;
+        background:
+          linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+          #05070a;
+        background-size: 42px 42px;
+      }
+
+      .capture-canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .camera-video {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .stage-empty {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        pointer-events: none;
+      }
+
+      .stage-empty span {
+        display: inline-flex;
+        align-items: center;
+        min-height: 38px;
+        padding: 0 12px;
+        border: 1px solid rgba(51, 177, 255, 0.4);
+        border-radius: 8px;
+        color: #d7eefc;
+        background: rgba(5, 7, 10, 0.78);
+      }
+
+      .capture-side {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        padding: 16px;
+        border-radius: 8px;
+      }
+
+      .control-stack {
+        display: grid;
+        gap: 10px;
+      }
+
+      .primary-action,
+      .secondary-action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        width: 100%;
+        min-height: 46px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition:
+          transform 160ms ease,
+          background 160ms ease,
+          color 160ms ease,
+          border-color 160ms ease;
+      }
+
+      .primary-action {
+        color: #04131d;
+        background: var(--accent);
+        font-weight: 780;
+      }
+
+      .secondary-action {
+        color: var(--foreground);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: var(--panel-strong);
+      }
+
+      .primary-action:hover,
+      .secondary-action:hover {
+        transform: translateY(-1px);
+      }
+
+      .primary-action:disabled,
+      .secondary-action:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+        transform: none;
+      }
+
+      .button-icon {
+        position: relative;
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        flex: 0 0 16px;
+      }
+
+      .play-icon::before {
+        content: "";
+        position: absolute;
+        inset: 2px 3px;
+        border-top: 6px solid transparent;
+        border-bottom: 6px solid transparent;
+        border-left: 9px solid currentColor;
+      }
+
+      .stop-icon::before {
+        content: "";
+        position: absolute;
+        inset: 3px;
+        border-radius: 2px;
+        background: currentColor;
+      }
+
+      .download-icon::before {
+        content: "";
+        position: absolute;
+        left: 7px;
+        top: 2px;
+        width: 2px;
+        height: 8px;
+        background: currentColor;
+      }
+
+      .download-icon::after {
+        content: "";
+        position: absolute;
+        left: 4px;
+        top: 8px;
+        width: 8px;
+        height: 8px;
+        border-right: 2px solid currentColor;
+        border-bottom: 2px solid currentColor;
+        transform: rotate(45deg);
+      }
+
+      .status-list {
+        display: grid;
+        gap: 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .status-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        min-height: 48px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .status-row span:first-child {
+        color: var(--muted);
+      }
+
+      .status-row strong {
+        color: var(--foreground);
+        font-weight: 720;
+        text-align: right;
+      }
+
+      .color-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .color-chip::before {
+        content: "";
+        width: 18px;
+        height: 18px;
+        border-radius: 5px;
+        background: var(--accent);
+        box-shadow: 0 0 24px rgba(51, 177, 255, 0.7);
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .status-pill::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--warm);
+        box-shadow: 0 0 16px rgba(255, 203, 116, 0.52);
+      }
+
+      .status-pill[data-active="true"]::before {
+        background: #5df2a0;
+        box-shadow: 0 0 16px rgba(93, 242, 160, 0.54);
+      }
+
+      .status-pill[data-error="true"]::before {
+        background: var(--danger);
+        box-shadow: 0 0 16px rgba(255, 107, 107, 0.54);
+      }
+
+      .capture-footnote {
+        margin-top: auto;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      @media (max-width: 920px) {
+        .capture-page {
+          padding: 12px;
+        }
+
+        .capture-shell {
+          grid-template-columns: 1fr;
+          min-height: calc(100vh - 24px);
+        }
+
+        .capture-side {
+          order: -1;
+        }
+
+        .capture-stage {
+          min-height: 58vh;
+        }
+      }
+
+      @media (max-width: 620px) {
+        .capture-topbar {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .mode-toggle,
+        .language-toggle {
+          width: 100%;
+        }
+
+        .language-toggle {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .capture-title h1 {
+          font-size: 22px;
+        }
+
+        .capture-stage {
+          min-height: 54vh;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="capture-page">
+      <div class="capture-shell">
+        <section class="capture-main" id="capture-main">
+          <header class="capture-topbar">
+            <div class="capture-title">
+              <h1 id="title"></h1>
+              <p id="subtitle"></p>
+            </div>
+            <div class="top-actions">
+              <div class="mode-toggle" id="mode-toggle">
+                <button type="button" data-mode="camera" aria-pressed="true"></button>
+                <button type="button" data-mode="lines" aria-pressed="false"></button>
+              </div>
+              <div class="language-toggle" id="language-toggle">
+                <button type="button" data-language="zh" aria-pressed="true" title="Chinese">
+                  &#20013;
+                </button>
+                <button type="button" data-language="en" aria-pressed="false" title="English">
+                  EN
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <div class="capture-stage" id="stage">
+            <canvas class="capture-canvas" id="canvas"></canvas>
+            <video class="camera-video" id="video" playsinline muted></video>
+            <div class="stage-empty" id="stage-empty" aria-hidden="true">
+              <span id="stage-label"></span>
+            </div>
+          </div>
+        </section>
+
+        <aside class="capture-side" id="capture-side">
+          <div class="control-stack">
+            <button type="button" class="primary-action" id="capture-button" disabled>
+              <span class="button-icon play-icon" aria-hidden="true"></span>
+              <span id="capture-button-label"></span>
+            </button>
+            <button type="button" class="secondary-action" id="save-button" disabled>
+              <span class="button-icon download-icon" aria-hidden="true"></span>
+              <span id="save-button-label"></span>
+            </button>
+          </div>
+
+          <div class="status-list" aria-live="polite">
+            <div class="status-row">
+              <span id="status-label"></span>
+              <strong class="status-pill" id="status-value"></strong>
+            </div>
+            <div class="status-row">
+              <span id="hands-label"></span>
+              <strong id="hands-value">0</strong>
+            </div>
+            <div class="status-row">
+              <span id="confidence-label"></span>
+              <strong id="confidence-value">--</strong>
+            </div>
+            <div class="status-row">
+              <span id="line-label"></span>
+              <strong class="color-chip">#33B1FF</strong>
+            </div>
+          </div>
+
+          <p class="capture-footnote" id="footnote"></p>
+        </aside>
+      </div>
+    </main>
+
+    <script>
+      const LINE_COLOR = "#33B1FF";
+      const HANDS_SCRIPT =
+        "https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js";
+      const HANDS_ASSETS =
+        "https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/";
+
+      const HAND_CONNECTIONS = [
+        [0, 1],
+        [1, 2],
+        [2, 3],
+        [3, 4],
+        [0, 5],
+        [5, 6],
+        [6, 7],
+        [7, 8],
+        [5, 9],
+        [9, 10],
+        [10, 11],
+        [11, 12],
+        [9, 13],
+        [13, 14],
+        [14, 15],
+        [15, 16],
+        [13, 17],
+        [0, 17],
+        [17, 18],
+        [18, 19],
+        [19, 20],
+      ];
+
+      const COPY = {
+        zh: {
+          langName: "\u4e2d\u6587",
+          title: "\u624b\u90e8\u52a8\u4f5c\u6355\u6349",
+          subtitle: "\u6444\u50cf\u5934\u8f93\u5165 / \u5b9e\u65f6\u9aa8\u67b6\u8f93\u51fa",
+          captureStage: "\u624b\u90e8\u52a8\u4f5c\u6355\u6349\u753b\u5e03",
+          controls: "\u6355\u6349\u63a7\u5236",
+          displayMode: "\u663e\u793a\u6a21\u5f0f",
+          language: "\u8bed\u8a00",
+          cameraMode: "\u753b\u9762",
+          linesMode: "\u7ebf\u6761",
+          standbyStage: "\u5f85\u673a",
+          loadingStage: "\u52a0\u8f7d\u4e2d",
+          start: "\u5f00\u59cb\u6355\u6349",
+          stop: "\u505c\u6b62\u6355\u6349",
+          saveFrame: "\u4fdd\u5b58\u5e27",
+          statusLabel: "\u72b6\u6001",
+          handsLabel: "\u624b\u6570",
+          confidenceLabel: "\u7f6e\u4fe1\u5ea6",
+          lineLabel: "\u7ebf\u6761",
+          abnormal: "\u5f02\u5e38",
+          footnote:
+            "\u6240\u6709\u8bc6\u522b\u90fd\u5728\u6d4f\u89c8\u5668\u672c\u5730\u5b9e\u65f6\u5904\u7406\uff0c\u6444\u50cf\u5934\u753b\u9762\u4e0d\u4f1a\u4e0a\u4f20\u3002",
+          status: {
+            loadingModule: "\u52a0\u8f7d\u8bc6\u522b\u6a21\u5757",
+            standby: "\u5f85\u673a",
+            stopped: "\u5df2\u505c\u6b62",
+            startingCamera: "\u542f\u52a8\u6444\u50cf\u5934",
+            seekingHand: "\u5bfb\u627e\u624b\u90e8",
+            capturing: "\u6355\u6349\u4e2d",
+            cameraUnavailable: "\u6444\u50cf\u5934\u4e0d\u53ef\u7528",
+            moduleUnavailable: "\u6a21\u5757\u4e0d\u53ef\u7528",
+          },
+          errors: {
+            handsLoad:
+              "\u624b\u90e8\u8bc6\u522b\u6a21\u5757\u52a0\u8f7d\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u7f51\u7edc\u540e\u91cd\u8bd5\u3002",
+            handsUnavailable:
+              "\u624b\u90e8\u8bc6\u522b\u6a21\u5757\u672a\u5c31\u7eea\uff0c\u8bf7\u5237\u65b0\u9875\u9762\u91cd\u8bd5\u3002",
+            cameraStart:
+              "\u6444\u50cf\u5934\u65e0\u6cd5\u542f\u52a8\uff0c\u8bf7\u68c0\u67e5\u6d4f\u89c8\u5668\u6743\u9650\u548c\u8bbe\u5907\u5360\u7528\u60c5\u51b5\u3002",
+          },
+        },
+        en: {
+          langName: "English",
+          title: "Hand Motion Capture",
+          subtitle: "Camera input / real-time skeleton output",
+          captureStage: "Hand motion capture canvas",
+          controls: "Capture controls",
+          displayMode: "Display mode",
+          language: "Language",
+          cameraMode: "Camera",
+          linesMode: "Lines",
+          standbyStage: "Standby",
+          loadingStage: "Loading",
+          start: "Start capture",
+          stop: "Stop capture",
+          saveFrame: "Save frame",
+          statusLabel: "Status",
+          handsLabel: "Hands",
+          confidenceLabel: "Confidence",
+          lineLabel: "Line",
+          abnormal: "Error",
+          footnote:
+            "All recognition runs locally in your browser in real time. Camera frames are not uploaded.",
+          status: {
+            loadingModule: "Loading detector",
+            standby: "Standby",
+            stopped: "Stopped",
+            startingCamera: "Starting camera",
+            seekingHand: "Looking for hands",
+            capturing: "Capturing",
+            cameraUnavailable: "Camera unavailable",
+            moduleUnavailable: "Detector unavailable",
+          },
+          errors: {
+            handsLoad:
+              "The hand recognition module failed to load. Check your network and try again.",
+            handsUnavailable:
+              "The hand recognition module is not ready. Refresh the page and try again.",
+            cameraStart:
+              "The camera could not start. Check browser permissions and whether another app is using it.",
+          },
+        },
+      };
+
+      const state = {
+        language: getInitialLanguage(),
+        viewMode: "camera",
+        statusKey: "loadingModule",
+        errorKey: null,
+        handCount: 0,
+        confidence: null,
+        libraryReady: false,
+        isRunning: false,
+        hands: null,
+        stream: null,
+        raf: null,
+        frameBusy: false,
+        latestResults: null,
+      };
+
+      const refs = {
+        canvas: document.getElementById("canvas"),
+        video: document.getElementById("video"),
+        stage: document.getElementById("stage"),
+        stageEmpty: document.getElementById("stage-empty"),
+        stageLabel: document.getElementById("stage-label"),
+        title: document.getElementById("title"),
+        subtitle: document.getElementById("subtitle"),
+        captureMain: document.getElementById("capture-main"),
+        captureSide: document.getElementById("capture-side"),
+        captureButton: document.getElementById("capture-button"),
+        captureButtonLabel: document.getElementById("capture-button-label"),
+        saveButton: document.getElementById("save-button"),
+        saveButtonLabel: document.getElementById("save-button-label"),
+        statusLabel: document.getElementById("status-label"),
+        statusValue: document.getElementById("status-value"),
+        handsLabel: document.getElementById("hands-label"),
+        handsValue: document.getElementById("hands-value"),
+        confidenceLabel: document.getElementById("confidence-label"),
+        confidenceValue: document.getElementById("confidence-value"),
+        lineLabel: document.getElementById("line-label"),
+        footnote: document.getElementById("footnote"),
+        modeToggle: document.getElementById("mode-toggle"),
+        languageToggle: document.getElementById("language-toggle"),
+      };
+
+      function getInitialLanguage() {
+        const saved = window.localStorage.getItem("hand-capture-language");
+        if (saved === "zh" || saved === "en") return saved;
+        return window.navigator.language.toLowerCase().startsWith("zh")
+          ? "zh"
+          : "en";
+      }
+
+      function loadHandsScript() {
+        return new Promise((resolve, reject) => {
+          if (window.Hands) {
+            resolve();
+            return;
+          }
+
+          const script = document.createElement("script");
+          script.src = HANDS_SCRIPT;
+          script.async = true;
+          script.onload = resolve;
+          script.onerror = () => reject(new Error("hands-load"));
+          document.head.appendChild(script);
+        });
+      }
+
+      function resizeCanvas() {
+        const rect = refs.stage.getBoundingClientRect();
+        const pixelRatio = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        const width = Math.max(1, Math.round(rect.width * pixelRatio));
+        const height = Math.max(1, Math.round(rect.height * pixelRatio));
+
+        if (refs.canvas.width !== width || refs.canvas.height !== height) {
+          refs.canvas.width = width;
+          refs.canvas.height = height;
+        }
+
+        return { width, height };
+      }
+
+      function getCoverTransform(canvasWidth, canvasHeight, videoWidth, videoHeight) {
+        const scale = Math.max(canvasWidth / videoWidth, canvasHeight / videoHeight);
+        const width = videoWidth * scale;
+        const height = videoHeight * scale;
+        return {
+          x: (canvasWidth - width) / 2,
+          y: (canvasHeight - height) / 2,
+          width,
+          height,
+        };
+      }
+
+      function drawLineBackdrop(context, width, height) {
+        context.fillStyle = "#05070a";
+        context.fillRect(0, 0, width, height);
+        context.strokeStyle = "rgba(51, 177, 255, 0.08)";
+        context.lineWidth = 1;
+
+        const gridSize = Math.max(36, width / 18);
+        for (let x = 0; x <= width; x += gridSize) {
+          context.beginPath();
+          context.moveTo(x, 0);
+          context.lineTo(x, height);
+          context.stroke();
+        }
+
+        for (let y = 0; y <= height; y += gridSize) {
+          context.beginPath();
+          context.moveTo(0, y);
+          context.lineTo(width, y);
+          context.stroke();
+        }
+      }
+
+      function drawIdleFrame() {
+        const context = refs.canvas.getContext("2d");
+        const { width, height } = resizeCanvas();
+        drawLineBackdrop(context, width, height);
+
+        context.save();
+        context.strokeStyle = LINE_COLOR;
+        context.lineWidth = 6;
+        context.lineCap = "round";
+        context.lineJoin = "round";
+        context.shadowColor = "rgba(51, 177, 255, 0.65)";
+        context.shadowBlur = 18;
+
+        const centerX = width * 0.5;
+        const centerY = height * 0.56;
+        const scale = Math.min(width, height) / 620;
+        const demoPoints = [
+          [centerX - 110 * scale, centerY + 84 * scale],
+          [centerX - 78 * scale, centerY - 30 * scale],
+          [centerX - 42 * scale, centerY - 148 * scale],
+          [centerX + 0 * scale, centerY - 68 * scale],
+          [centerX + 42 * scale, centerY - 174 * scale],
+          [centerX + 62 * scale, centerY - 48 * scale],
+          [centerX + 130 * scale, centerY - 134 * scale],
+          [centerX + 98 * scale, centerY - 12 * scale],
+          [centerX + 174 * scale, centerY - 54 * scale],
+        ];
+
+        context.beginPath();
+        context.moveTo(demoPoints[0][0], demoPoints[0][1]);
+        for (const point of demoPoints.slice(1)) {
+          context.lineTo(point[0], point[1]);
+        }
+        context.stroke();
+        context.restore();
+      }
+
+      function drawVideoFrame(context, transform, canvasWidth) {
+        context.save();
+        context.translate(canvasWidth, 0);
+        context.scale(-1, 1);
+        context.drawImage(
+          refs.video,
+          canvasWidth - transform.x - transform.width,
+          transform.y,
+          transform.width,
+          transform.height,
+        );
+        context.restore();
+      }
+
+      function pointForLandmark(landmark, transform) {
+        return {
+          x: transform.x + (1 - landmark.x) * transform.width,
+          y: transform.y + landmark.y * transform.height,
+        };
+      }
+
+      function drawHandSkeleton(context, hands, transform) {
+        context.save();
+        context.lineCap = "round";
+        context.lineJoin = "round";
+        context.shadowColor = "rgba(51, 177, 255, 0.7)";
+        context.shadowBlur = 18;
+
+        for (const landmarks of hands) {
+          context.strokeStyle = LINE_COLOR;
+          context.lineWidth = 7;
+
+          for (const [startIndex, endIndex] of HAND_CONNECTIONS) {
+            const start = landmarks[startIndex];
+            const end = landmarks[endIndex];
+            if (!start || !end) continue;
+
+            const startPoint = pointForLandmark(start, transform);
+            const endPoint = pointForLandmark(end, transform);
+            context.beginPath();
+            context.moveTo(startPoint.x, startPoint.y);
+            context.lineTo(endPoint.x, endPoint.y);
+            context.stroke();
+          }
+
+          context.fillStyle = "#c7efff";
+          for (const landmark of landmarks) {
+            const point = pointForLandmark(landmark, transform);
+            context.beginPath();
+            context.arc(point.x, point.y, 6, 0, Math.PI * 2);
+            context.fill();
+          }
+        }
+
+        context.restore();
+      }
+
+      function drawResults(results) {
+        if (!refs.video.videoWidth || !refs.video.videoHeight) return;
+
+        const context = refs.canvas.getContext("2d");
+        const { width, height } = resizeCanvas();
+        const transform = getCoverTransform(
+          width,
+          height,
+          refs.video.videoWidth,
+          refs.video.videoHeight,
+        );
+
+        context.clearRect(0, 0, width, height);
+
+        if (state.viewMode === "camera") {
+          drawVideoFrame(context, transform, width);
+          context.fillStyle = "rgba(3, 7, 12, 0.16)";
+          context.fillRect(0, 0, width, height);
+        } else {
+          drawLineBackdrop(context, width, height);
+        }
+
+        const hands = results.multiHandLandmarks || [];
+        if (hands.length > 0) {
+          drawHandSkeleton(context, hands, transform);
+        }
+      }
+
+      function handleResults(results) {
+        state.latestResults = results;
+        const hands = results.multiHandLandmarks || [];
+        const handedness = results.multiHandedness || [];
+        const scoreTotal = handedness.reduce(
+          (total, hand) => total + (hand.score || 0),
+          0,
+        );
+
+        state.handCount = hands.length;
+        state.confidence = handedness.length ? scoreTotal / handedness.length : null;
+        state.statusKey = hands.length > 0 ? "capturing" : "seekingHand";
+        render();
+        drawResults(results);
+      }
+
+      async function startCamera() {
+        if (!state.hands || state.isRunning) return;
+
+        state.errorKey = null;
+        state.statusKey = "startingCamera";
+        render();
+
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: {
+              facingMode: "user",
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+          });
+
+          state.stream = stream;
+          refs.video.srcObject = stream;
+          await refs.video.play();
+
+          state.isRunning = true;
+          state.statusKey = "seekingHand";
+          render();
+
+          const loop = async () => {
+            if (!state.isRunning || !state.hands) return;
+
+            if (refs.video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+              if (!state.frameBusy) {
+                state.frameBusy = true;
+                try {
+                  await state.hands.send({ image: refs.video });
+                } finally {
+                  state.frameBusy = false;
+                }
+              }
+            }
+
+            state.raf = requestAnimationFrame(loop);
+          };
+
+          state.raf = requestAnimationFrame(loop);
+        } catch {
+          state.errorKey = "cameraStart";
+          state.statusKey = "cameraUnavailable";
+          stopCamera(false);
+          state.statusKey = "cameraUnavailable";
+          render();
+        }
+      }
+
+      function stopCamera(shouldRender = true) {
+        state.isRunning = false;
+
+        if (state.raf !== null) {
+          cancelAnimationFrame(state.raf);
+          state.raf = null;
+        }
+
+        if (state.stream) {
+          state.stream.getTracks().forEach((track) => track.stop());
+        }
+
+        state.stream = null;
+        refs.video.pause();
+        refs.video.srcObject = null;
+        state.frameBusy = false;
+        state.latestResults = null;
+        state.handCount = 0;
+        state.confidence = null;
+        if (!state.errorKey) state.statusKey = "stopped";
+
+        drawIdleFrame();
+        if (shouldRender) render();
+      }
+
+      function saveFrame() {
+        const link = document.createElement("a");
+        link.href = refs.canvas.toDataURL("image/png");
+        link.download = "hand-motion-capture.png";
+        link.click();
+      }
+
+      function setLanguage(language) {
+        state.language = language;
+        document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
+        window.localStorage.setItem("hand-capture-language", language);
+        render();
+      }
+
+      function setViewMode(mode) {
+        state.viewMode = mode;
+        if (state.latestResults && state.isRunning) {
+          drawResults(state.latestResults);
+        } else {
+          drawIdleFrame();
+        }
+        render();
+      }
+
+      function render() {
+        const copy = COPY[state.language];
+        refs.title.textContent = copy.title;
+        refs.subtitle.textContent = copy.subtitle;
+        refs.captureMain.setAttribute("aria-label", copy.captureStage);
+        refs.captureSide.setAttribute("aria-label", copy.controls);
+        refs.modeToggle.setAttribute("aria-label", copy.displayMode);
+        refs.languageToggle.setAttribute("aria-label", copy.language);
+        refs.stageLabel.textContent = state.libraryReady
+          ? copy.standbyStage
+          : copy.loadingStage;
+
+        refs.modeToggle.querySelector('[data-mode="camera"]').textContent =
+          copy.cameraMode;
+        refs.modeToggle.querySelector('[data-mode="lines"]').textContent =
+          copy.linesMode;
+
+        refs.captureButtonLabel.textContent = state.isRunning
+          ? copy.stop
+          : copy.start;
+        refs.captureButton.disabled = !state.libraryReady || Boolean(state.errorKey);
+        refs.captureButton.querySelector(".button-icon").className = state.isRunning
+          ? "button-icon stop-icon"
+          : "button-icon play-icon";
+        refs.saveButtonLabel.textContent = copy.saveFrame;
+        refs.saveButton.disabled = !state.isRunning;
+
+        refs.statusLabel.textContent = copy.statusLabel;
+        refs.statusValue.textContent = state.errorKey
+          ? copy.abnormal
+          : copy.status[state.statusKey];
+        refs.statusValue.dataset.active = String(state.isRunning && !state.errorKey);
+        refs.statusValue.dataset.error = String(Boolean(state.errorKey));
+        refs.handsLabel.textContent = copy.handsLabel;
+        refs.handsValue.textContent = String(state.handCount);
+        refs.confidenceLabel.textContent = copy.confidenceLabel;
+        refs.confidenceValue.textContent =
+          state.confidence === null ? "--" : `${Math.round(state.confidence * 100)}%`;
+        refs.lineLabel.textContent = copy.lineLabel;
+        refs.footnote.textContent = state.errorKey
+          ? copy.errors[state.errorKey]
+          : copy.footnote;
+        refs.stageEmpty.style.display = state.isRunning ? "none" : "grid";
+
+        for (const button of refs.modeToggle.querySelectorAll("button")) {
+          button.setAttribute("aria-pressed", String(button.dataset.mode === state.viewMode));
+        }
+
+        for (const button of refs.languageToggle.querySelectorAll("button")) {
+          button.setAttribute(
+            "aria-pressed",
+            String(button.dataset.language === state.language),
+          );
+        }
+      }
+
+      refs.captureButton.addEventListener("click", () => {
+        if (state.isRunning) {
+          stopCamera();
+        } else {
+          startCamera();
+        }
+      });
+      refs.saveButton.addEventListener("click", saveFrame);
+      refs.modeToggle.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-mode]");
+        if (button) setViewMode(button.dataset.mode);
+      });
+      refs.languageToggle.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-language]");
+        if (button) setLanguage(button.dataset.language);
+      });
+      window.addEventListener("resize", () => {
+        if (state.latestResults && state.isRunning) {
+          drawResults(state.latestResults);
+        } else {
+          drawIdleFrame();
+        }
+      });
+
+      render();
+      drawIdleFrame();
+
+      loadHandsScript()
+        .then(() => {
+          if (!window.Hands) throw new Error("hands-unavailable");
+          state.hands = new window.Hands({
+            locateFile: (file) => `${HANDS_ASSETS}${file}`,
+          });
+          state.hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.72,
+            minTrackingConfidence: 0.72,
+            selfieMode: false,
+          });
+          state.hands.onResults(handleResults);
+          state.libraryReady = true;
+          state.statusKey = "standby";
+          render();
+          drawIdleFrame();
+        })
+        .catch((error) => {
+          state.errorKey =
+            error && error.message === "hands-unavailable"
+              ? "handsUnavailable"
+              : "handsLoad";
+          state.statusKey = "moduleUnavailable";
+          render();
+          drawIdleFrame();
+        });
+    </script>
+  </body>
+</html>
