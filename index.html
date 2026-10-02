@@ -116,7 +116,8 @@
       }
 
       .mode-toggle,
-      .language-toggle {
+      .language-toggle,
+      .tracking-toggle {
         display: inline-grid;
         gap: 4px;
         padding: 4px;
@@ -133,8 +134,14 @@
         grid-template-columns: repeat(2, 46px);
       }
 
+      .tracking-toggle {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: 100%;
+      }
+
       .mode-toggle button,
-      .language-toggle button {
+      .language-toggle button,
+      .tracking-toggle button {
         min-height: 38px;
         border-radius: 6px;
         color: var(--muted);
@@ -143,7 +150,8 @@
       }
 
       .mode-toggle button[aria-pressed="true"],
-      .language-toggle button[aria-pressed="true"] {
+      .language-toggle button[aria-pressed="true"],
+      .tracking-toggle button[aria-pressed="true"] {
         color: #03121f;
         background: var(--accent);
         font-weight: 720;
@@ -206,6 +214,56 @@
       .control-stack {
         display: grid;
         gap: 10px;
+      }
+
+      .glove-controls {
+        display: grid;
+        gap: 10px;
+      }
+
+      .glove-controls[hidden] {
+        display: none;
+      }
+
+      .control-label {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .glove-help {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .calibration-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .calibration-actions button {
+        min-height: 38px;
+        font-size: 13px;
+      }
+
+      .capture-stage[data-calibrating="true"] {
+        cursor: crosshair;
+      }
+
+      .calibration-notice {
+        position: absolute;
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        padding: 10px 12px;
+        border: 1px solid rgba(51, 177, 255, 0.45);
+        border-radius: 8px;
+        background: rgba(5, 7, 10, 0.88);
+        color: #d7eefc;
+        font-size: 13px;
+        pointer-events: none;
       }
 
       .primary-action,
@@ -440,6 +498,7 @@
           <div class="capture-stage" id="stage">
             <canvas class="capture-canvas" id="canvas"></canvas>
             <video class="camera-video" id="video" playsinline muted></video>
+            <div class="calibration-notice" id="calibration-notice" role="status" hidden></div>
             <div class="stage-empty" id="stage-empty" aria-hidden="true">
               <span id="stage-label"></span>
             </div>
@@ -447,6 +506,13 @@
         </section>
 
         <aside class="capture-side" id="capture-side">
+          <div class="control-stack">
+            <p class="control-label" id="tracking-label"></p>
+            <div class="tracking-toggle" id="tracking-toggle">
+              <button type="button" data-tracking="glove" aria-pressed="true"></button>
+              <button type="button" data-tracking="bare" aria-pressed="false"></button>
+            </div>
+          </div>
           <div class="control-stack">
             <button type="button" class="primary-action" id="capture-button" disabled>
               <span class="button-icon play-icon" aria-hidden="true"></span>
@@ -456,6 +522,14 @@
               <span class="button-icon download-icon" aria-hidden="true"></span>
               <span id="save-button-label"></span>
             </button>
+          </div>
+
+          <div class="glove-controls" id="glove-controls">
+            <div class="calibration-actions">
+              <button type="button" class="secondary-action" id="calibrate-button" disabled></button>
+              <button type="button" class="secondary-action" id="reset-calibration-button" disabled></button>
+            </div>
+            <p class="glove-help" id="glove-help"></p>
           </div>
 
           <div class="status-list" aria-live="polite">
@@ -598,6 +672,33 @@
         },
       };
 
+      Object.assign(COPY.zh, {
+        trackingLabel: "识别模式",
+        gloveMode: "裸手 + 手套",
+        bareMode: "裸手优先",
+        calibrate: "手套校准",
+        cancelCalibration: "取消校准",
+        resetCalibration: "重置",
+        gloveHelp: "同一画面可识别裸手和戴手套的手，无需切换。先展开手指；手套识别不到时，点击“手套校准”，再点击手套掌部。可选取两种颜色。请使用有色差的背景；厚手套或手指重叠仍可能丢失追踪。",
+        calibrationNotice: "点击画面中手套的掌部，采集颜色并聚焦此区域。",
+        calibrationDone: "已采集手套颜色。保持手掌展开，稍等片刻；另一只手套颜色不同时可再校准一次。",
+        confidenceLabel: "手别置信度",
+      });
+      Object.assign(COPY.en, {
+        trackingLabel: "Recognition mode",
+        gloveMode: "Hands + gloves",
+        bareMode: "Bare hand priority",
+        calibrate: "Calibrate glove",
+        cancelCalibration: "Cancel",
+        resetCalibration: "Reset",
+        gloveHelp: "Track bare and gloved hands together without switching modes. Spread your fingers first. If a glove is missed, choose Calibrate glove and click its palm. You can sample two colors. Use a contrasting background; thick gloves or overlapping fingers can still prevent tracking.",
+        calibrationNotice: "Click the glove's palm to sample its color and focus on this area.",
+        calibrationDone: "Glove color sampled. Hold an open palm briefly; calibrate again if the other glove has a different color.",
+        confidenceLabel: "Handedness confidence",
+      });
+      COPY.zh.errors.recognitionFailed = "识别中断。请重新开始捕捉；若反复出现，请刷新页面。";
+      COPY.en.errors.recognitionFailed = "Tracking was interrupted. Restart capture, or refresh the page if this continues.";
+
       const state = {
         language: getInitialLanguage(),
         viewMode: "camera",
@@ -612,6 +713,29 @@
         raf: null,
         frameBusy: false,
         latestResults: null,
+        trackingMode: "glove",
+        recoveryHands: null,
+        detectorResults: new WeakMap(),
+        frameCanvas: document.createElement("canvas"),
+        enhancedCanvas: document.createElement("canvas"),
+        cropCanvas: document.createElement("canvas"),
+        colorProfiles: [],
+        calibrating: false,
+        calibrationMessage: false,
+        focusRegion: null,
+        tracks: [],
+        needsReset: true,
+        session: 0,
+        isStarting: false,
+        lastRecovery: -Infinity,
+        recoveryIndex: 0,
+        recoveryInputKey: null,
+        lastVideoTime: -1,
+        primaryVariant: "raw",
+        assistVariant: "contrast",
+        needsRecoveryReset: true,
+        activeRegion: null,
+        settingsVersion: 0,
       };
 
       const refs = {
@@ -638,6 +762,13 @@
         footnote: document.getElementById("footnote"),
         modeToggle: document.getElementById("mode-toggle"),
         languageToggle: document.getElementById("language-toggle"),
+        trackingToggle: document.getElementById("tracking-toggle"),
+        trackingLabel: document.getElementById("tracking-label"),
+        gloveControls: document.getElementById("glove-controls"),
+        gloveHelp: document.getElementById("glove-help"),
+        calibrateButton: document.getElementById("calibrate-button"),
+        resetCalibrationButton: document.getElementById("reset-calibration-button"),
+        calibrationNotice: document.getElementById("calibration-notice"),
       };
 
       function getInitialLanguage() {
@@ -662,6 +793,408 @@
           script.onerror = () => reject(new Error("hands-load"));
           document.head.appendChild(script);
         });
+      }
+
+      const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
+      const emptyResults = () => ({ multiHandLandmarks: [], multiHandedness: [] });
+
+      function detectorOptions(recovery = false) {
+        const glove = state.trackingMode === "glove";
+        return {
+          maxNumHands: 2,
+          modelComplexity: 1,
+          minDetectionConfidence: glove ? (recovery ? 0.3 : 0.4) : 0.6,
+          minTrackingConfidence: glove ? 0.4 : 0.6,
+          selfieMode: false,
+        };
+      }
+
+      function createDetector(recovery = false) {
+        const detector = new window.Hands({ locateFile: (file) => `${HANDS_ASSETS}${file}` });
+        detector.setOptions(detectorOptions(recovery));
+        detector.onResults((results) => state.detectorResults.set(detector, results));
+        return detector;
+      }
+
+      async function detect(detector, image, reset = false) {
+        if (reset) await detector.reset();
+        state.detectorResults.set(detector, null);
+        await detector.send({ image });
+        return state.detectorResults.get(detector) || emptyResults();
+      }
+
+      function colorComponents(r, g, b) {
+        return {
+          y: 0.299 * r + 0.587 * g + 0.114 * b,
+          cb: -0.168736 * r - 0.331264 * g + 0.5 * b,
+          cr: 0.5 * r - 0.418688 * g - 0.081312 * b,
+        };
+      }
+
+      function matchingProfile(r, g, b) {
+        if (!state.colorProfiles.length) return undefined;
+        const color = colorComponents(r, g, b);
+        return state.colorProfiles.find((profile) =>
+          Math.abs(color.y - profile.y) <= profile.yTolerance &&
+          Math.hypot(color.cb - profile.cb, color.cr - profile.cr) <= profile.chromaTolerance,
+        );
+      }
+
+      function captureInputFrame() {
+        const scale = Math.min(1, 960 / refs.video.videoWidth);
+        const width = Math.round(refs.video.videoWidth * scale);
+        const height = Math.round(refs.video.videoHeight * scale);
+        if (state.frameCanvas.width !== width || state.frameCanvas.height !== height) {
+          state.frameCanvas.width = width;
+          state.frameCanvas.height = height;
+        }
+        state.frameCanvas.getContext("2d", { willReadFrequently: true })
+          .drawImage(refs.video, 0, 0, width, height);
+      }
+
+      function enhanceFrame(variant = "contrast") {
+        const source = state.frameCanvas;
+        const output = state.enhancedCanvas;
+        if (output.width !== source.width || output.height !== source.height) {
+          output.width = source.width;
+          output.height = source.height;
+        }
+        const context = output.getContext("2d", { willReadFrequently: true });
+        context.drawImage(source, 0, 0);
+        const image = context.getImageData(0, 0, output.width, output.height);
+        const pixels = image.data;
+        const histogram = new Uint32Array(256);
+        for (let i = 0; i < pixels.length; i += 16) {
+          histogram[Math.round(0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2])]++;
+        }
+        const sampleCount = Math.ceil(pixels.length / 16);
+        let low = 0, high = 255, total = 0;
+        for (let i = 0; i < 256; i++) {
+          total += histogram[i];
+          if (total < sampleCount * 0.02) low = i;
+          if (total < sampleCount * 0.98) high = i;
+        }
+        const range = Math.max(80, high - low);
+        for (let i = 0; i < pixels.length; i += 4) {
+          const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
+          const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+          const adjusted = 255 * Math.pow(clamp((luminance - low) / range), 0.78);
+          const profile = matchingProfile(r, g, b);
+          if (profile) {
+            // Preserve measured shading and silhouette; only the detector sees this color adaptation.
+            const shade = clamp(145 + (luminance - profile.y) * 1.6, 45, 215);
+            pixels[i] = shade + 35;
+            pixels[i + 1] = shade + 10;
+            pixels[i + 2] = shade - 15;
+          } else if (variant === "warm" && !state.colorProfiles.length) {
+            pixels[i] = clamp(adjusted * 1.08 + 18, 0, 255);
+            pixels[i + 1] = clamp(adjusted * 0.91 + 8, 0, 255);
+            pixels[i + 2] = clamp(adjusted * 0.78 + 3, 0, 255);
+          } else {
+            const offset = (adjusted - luminance) * 0.75;
+            pixels[i] = clamp(r + offset, 0, 255);
+            pixels[i + 1] = clamp(g + offset, 0, 255);
+            pixels[i + 2] = clamp(b + offset, 0, 255);
+          }
+        }
+        context.putImageData(image, 0, 0);
+        return output;
+      }
+
+      function paddedRegion(region, margin = 0.35) {
+        const minX = clamp(region.x - region.width * margin);
+        const minY = clamp(region.y - region.height * margin);
+        const maxX = clamp(region.x + region.width * (1 + margin));
+        const maxY = clamp(region.y + region.height * (1 + margin));
+        return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+      }
+
+      function landmarkRegion(landmarks, margin = 0.45) {
+        const xs = landmarks.map((point) => point.x);
+        const ys = landmarks.map((point) => point.y);
+        return paddedRegion({
+          x: Math.min(...xs), y: Math.min(...ys),
+          width: Math.max(0.08, Math.max(...xs) - Math.min(...xs)),
+          height: Math.max(0.08, Math.max(...ys) - Math.min(...ys)),
+        }, margin);
+      }
+
+      function cropFrame(source, region) {
+        const width = Math.max(1, source.width * region.width);
+        const height = Math.max(1, source.height * region.height);
+        const scale = Math.min(2, 640 / Math.max(width, height));
+        const output = state.cropCanvas;
+        output.width = Math.max(1, Math.round(width * scale));
+        output.height = Math.max(1, Math.round(height * scale));
+        output.getContext("2d").drawImage(source,
+          source.width * region.x, source.height * region.y, width, height,
+          0, 0, output.width, output.height,
+        );
+        return output;
+      }
+
+      function validLandmarks(landmarks) {
+        if (!landmarks || landmarks.length !== 21) return false;
+        if (landmarks.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y) ||
+          !Number.isFinite(p.z) || p.x < -0.2 || p.x > 1.2 || p.y < -0.2 || p.y > 1.2)) return false;
+        const palmSize = Math.hypot(landmarks[5].x - landmarks[17].x, landmarks[5].y - landmarks[17].y);
+        return palmSize > 0.015 && palmSize < 0.8;
+      }
+
+      function candidatesFor(results, region = null) {
+        return (results.multiHandLandmarks || []).flatMap((landmarks, index) => {
+          if (!validLandmarks(landmarks)) return [];
+          const mapped = landmarks.map((point) => ({
+            x: region ? region.x + point.x * region.width : point.x,
+            y: region ? region.y + point.y * region.height : point.y,
+            z: region ? point.z * region.width : point.z,
+          }));
+          if (!validLandmarks(mapped)) return [];
+          return [{ landmarks: mapped, handedness: results.multiHandedness?.[index] || null }];
+        });
+      }
+
+      function palmDistance(a, b) {
+        return [0, 5, 9, 13, 17].reduce((sum, index) =>
+          sum + Math.hypot(a[index].x - b[index].x, a[index].y - b[index].y), 0) / 5;
+      }
+
+      function mergeCandidates(current, additions) {
+        const merged = [...current];
+        for (const candidate of additions) {
+          const duplicate = merged.some((other) => {
+            const span = Math.hypot(other.landmarks[5].x - other.landmarks[17].x,
+              other.landmarks[5].y - other.landmarks[17].y);
+            return palmDistance(candidate.landmarks, other.landmarks) < Math.max(0.035, span * 0.55);
+          });
+          if (!duplicate && merged.length < 2) merged.push(candidate);
+        }
+        return merged;
+      }
+
+      function colorRegions() {
+        if (!state.colorProfiles.length) return [];
+        const source = state.frameCanvas;
+        const pixels = source.getContext("2d", { willReadFrequently: true })
+          .getImageData(0, 0, source.width, source.height).data;
+        const step = 6;
+        const width = Math.ceil(source.width / step), height = Math.ceil(source.height / step);
+        const mask = new Uint8Array(width * height);
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            const i = (Math.min(y * step, source.height - 1) * source.width + Math.min(x * step, source.width - 1)) * 4;
+            mask[y * width + x] = matchingProfile(pixels[i], pixels[i + 1], pixels[i + 2]) ? 1 : 0;
+          }
+        }
+        const regions = [];
+        for (let start = 0; start < mask.length; start++) {
+          if (mask[start] !== 1) continue;
+          const queue = [start];
+          mask[start] = 2;
+          let minX = width, minY = height, maxX = 0, maxY = 0;
+          for (let head = 0; head < queue.length; head++) {
+            const index = queue[head], x = index % width, y = Math.floor(index / width);
+            minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+            minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+            const neighbors = [];
+            if (x > 0) neighbors.push(index - 1);
+            if (x + 1 < width) neighbors.push(index + 1);
+            if (y > 0) neighbors.push(index - width);
+            if (y + 1 < height) neighbors.push(index + width);
+            for (const neighbor of neighbors) {
+              if (mask[neighbor] === 1) { mask[neighbor] = 2; queue.push(neighbor); }
+            }
+          }
+          // Large areas of matching background must not become a pretend hand.
+          if (queue.length < 30 || queue.length > mask.length * 0.5 || maxX - minX < 4 || maxY - minY < 4) continue;
+          regions.push({ ...paddedRegion({
+            x: minX / width, y: minY / height,
+            width: (maxX - minX + 1) / width, height: (maxY - minY + 1) / height,
+          }), area: queue.length });
+        }
+        return regions.sort((a, b) => b.area - a.area).slice(0, 3);
+      }
+
+      function stabilizeCandidates(candidates, now) {
+        const oldTracks = state.tracks.filter((track) => now - track.seenAt < 750);
+        const used = new Set();
+        const fresh = candidates.map((candidate) => {
+          let match = -1, best = 0.18;
+          oldTracks.forEach((track, index) => {
+            if (used.has(index)) return;
+            const distance = palmDistance(candidate.landmarks, track.landmarks);
+            if (distance < best) { match = index; best = distance; }
+          });
+          let landmarks = candidate.landmarks;
+          if (match >= 0) used.add(match);
+          if (match >= 0 && now - oldTracks[match].seenAt < 200) {
+            const alpha = clamp(0.55 + best * 4, 0.55, 0.95);
+            landmarks = landmarks.map((point, index) => ({
+              x: point.x * alpha + oldTracks[match].landmarks[index].x * (1 - alpha),
+              y: point.y * alpha + oldTracks[match].landmarks[index].y * (1 - alpha),
+              z: point.z * alpha + oldTracks[match].landmarks[index].z * (1 - alpha),
+            }));
+          }
+          return { ...candidate, landmarks, seenAt: now };
+        });
+        state.tracks = [...fresh, ...oldTracks.filter((_, index) => !used.has(index))].slice(0, 4);
+        // Only observations from this frame are displayed. Previous tracks are used for recovery, never as new measurements.
+        return fresh;
+      }
+
+      async function processFrame(session) {
+        const version = state.settingsVersion;
+        const isCurrent = () => state.isRunning && session === state.session && version === state.settingsVersion;
+        captureInputFrame();
+        if (state.needsReset) {
+          state.hands.setOptions(detectorOptions());
+          await state.hands.reset();
+          if (!isCurrent()) return;
+          state.needsReset = false;
+        }
+        if (!isCurrent()) return;
+        const glove = state.trackingMode === "glove";
+        const source = glove && state.primaryVariant !== "raw"
+          ? enhanceFrame(state.primaryVariant) : state.frameCanvas;
+        const region = glove ? state.activeRegion : null;
+        const mainImage = region ? cropFrame(source, region) : source;
+        let candidates = candidatesFor(await detect(state.hands, mainImage), region);
+        if (!isCurrent()) return;
+        const mainCount = candidates.length;
+        if (glove && candidates.length < 2) {
+          if (!state.recoveryHands) state.recoveryHands = createDetector(true);
+          // Both paths run on the SAME frame so a bare hand and a gloved hand can be tracked together.
+          const variant = state.primaryVariant === "raw" ? state.assistVariant : "raw";
+          const recoverySource = variant === "raw" ? state.frameCanvas : enhanceFrame(variant);
+          const inputKey = `full:${variant}`;
+          const reset = state.needsRecoveryReset || state.recoveryInputKey !== inputKey;
+          const recovered = candidatesFor(await detect(state.recoveryHands, recoverySource, reset));
+          if (!isCurrent()) return;
+          state.recoveryInputKey = inputKey;
+          state.needsRecoveryReset = false;
+          candidates = mergeCandidates(candidates, recovered);
+          if (recovered.length === 2 && recovered.length > mainCount) {
+            state.primaryVariant = variant;
+            state.activeRegion = null;
+            state.needsReset = true;
+          }
+          if (candidates.length < 2 && performance.now() - state.lastRecovery > 240) {
+            state.recoveryIndex++;
+            if (!candidates.length && !state.colorProfiles.length &&
+              state.primaryVariant !== "warm" && variant !== "warm") {
+              const warm = candidatesFor(await detect(state.recoveryHands, enhanceFrame("warm"), true));
+              if (!isCurrent()) return;
+              state.recoveryInputKey = "full:warm";
+              candidates = mergeCandidates(candidates, warm);
+              if (warm.length) state.assistVariant = "warm";
+            }
+            const regions = [
+              ...state.tracks.filter((track) => performance.now() - track.seenAt < 750)
+                .map((track) => landmarkRegion(track.landmarks)),
+              ...colorRegions(),
+              ...(state.focusRegion ? [state.focusRegion] : []),
+            ].filter((roi) => roi.width > 0.05 && roi.height > 0.05 && !candidates.some((candidate) => {
+              const wrist = candidate.landmarks[0];
+              return wrist.x > roi.x && wrist.x < roi.x + roi.width && wrist.y > roi.y && wrist.y < roi.y + roi.height;
+            }));
+            if (regions.length) {
+              const roi = regions[(state.recoveryIndex - 1) % regions.length];
+              const cropSource = enhanceFrame(state.colorProfiles.length ? "contrast" : "warm");
+              const cropped = candidatesFor(await detect(state.recoveryHands, cropFrame(cropSource, roi), true), roi);
+              if (!isCurrent()) return;
+              state.recoveryInputKey = "crop";
+              candidates = mergeCandidates(candidates, cropped);
+              if (mainCount === 0 && cropped.length) {
+                state.primaryVariant = state.colorProfiles.length ? "contrast" : "warm";
+                state.activeRegion = landmarkRegion(cropped.flatMap((candidate) => candidate.landmarks), 0.6);
+                state.needsReset = true;
+              }
+            }
+            state.lastRecovery = performance.now();
+          }
+        }
+        if (!isCurrent()) return;
+        if (state.activeRegion && mainCount > 0) {
+          state.activeRegion = landmarkRegion(candidates.flatMap((candidate) => candidate.landmarks), 0.6);
+        } else if (state.activeRegion && !candidates.length) {
+          state.activeRegion = null;
+          state.needsReset = true;
+        }
+        const stable = stabilizeCandidates(candidates, performance.now());
+        handleResults({
+          image: state.frameCanvas,
+          multiHandLandmarks: stable.map((candidate) => candidate.landmarks),
+          multiHandedness: stable.map((candidate) => candidate.handedness).filter(Boolean),
+        });
+      }
+
+      function resetTracking() {
+        state.settingsVersion++;
+        state.tracks = [];
+        state.activeRegion = null;
+        state.primaryVariant = "raw";
+        state.assistVariant = "contrast";
+        state.needsRecoveryReset = true;
+        state.lastRecovery = -Infinity;
+        state.recoveryIndex = 0;
+        state.needsReset = true;
+        state.latestResults = null;
+        state.handCount = 0;
+        state.confidence = null;
+      }
+
+      function setTrackingMode(mode) {
+        if (mode !== "glove" && mode !== "bare") return;
+        state.trackingMode = mode;
+        state.calibrating = false;
+        state.calibrationMessage = false;
+        resetTracking();
+        if (state.isRunning) state.statusKey = "seekingHand";
+        render();
+      }
+
+      function beginCalibration() {
+        if (!state.isRunning || !state.latestResults || state.trackingMode !== "glove") return;
+        state.calibrating = !state.calibrating;
+        state.calibrationMessage = false;
+        if (state.calibrating) state.viewMode = "camera";
+        render();
+        drawResults(state.latestResults);
+      }
+
+      function calibrateAtPoint(event) {
+        if (!state.calibrating || !state.isRunning || !state.latestResults) return;
+        const rect = refs.canvas.getBoundingClientRect();
+        const transform = getCoverTransform(refs.canvas.width, refs.canvas.height,
+          refs.video.videoWidth, refs.video.videoHeight);
+        const px = (event.clientX - rect.left) * refs.canvas.width / rect.width;
+        const py = (event.clientY - rect.top) * refs.canvas.height / rect.height;
+        const x = 1 - (px - transform.x) / transform.width;
+        const y = (py - transform.y) / transform.height;
+        if (x < 0 || x > 1 || y < 0 || y > 1) return;
+        const source = state.frameCanvas;
+        const sampleX = clamp(Math.round(x * source.width) - 5, 0, source.width - 11);
+        const sampleY = clamp(Math.round(y * source.height) - 5, 0, source.height - 11);
+        const pixels = source.getContext("2d", { willReadFrequently: true }).getImageData(sampleX, sampleY, 11, 11).data;
+        const ys = [], cbs = [], crs = [];
+        for (let i = 0; i < pixels.length; i += 4) {
+          const color = colorComponents(pixels[i], pixels[i + 1], pixels[i + 2]);
+          ys.push(color.y); cbs.push(color.cb); crs.push(color.cr);
+        }
+        for (const values of [ys, cbs, crs]) values.sort((a, b) => a - b);
+        const median = (values) => values[Math.floor(values.length / 2)];
+        const profile = {
+          y: median(ys), cb: median(cbs), cr: median(crs),
+          yTolerance: Math.max(40, (ys[90] - ys[30]) * 2.5), chromaTolerance: 24,
+        };
+        state.colorProfiles.push(profile);
+        state.colorProfiles = state.colorProfiles.slice(-2);
+        state.focusRegion = paddedRegion({ x: x - 0.2, y: y - 0.3, width: 0.4, height: 0.6 }, 0.15);
+        state.calibrating = false;
+        state.calibrationMessage = true;
+        resetTracking();
+        state.statusKey = "seekingHand";
+        render();
       }
 
       function resizeCanvas() {
@@ -754,7 +1287,7 @@
         context.translate(canvasWidth, 0);
         context.scale(-1, 1);
         context.drawImage(
-          refs.video,
+          state.latestResults?.image || refs.video,
           canvasWidth - transform.x - transform.width,
           transform.y,
           transform.width,
@@ -851,8 +1384,12 @@
       }
 
       async function startCamera() {
-        if (!state.hands || state.isRunning) return;
+        if (!state.hands || state.isRunning || state.isStarting || state.frameBusy) return;
 
+        const session = ++state.session;
+        state.isStarting = true;
+        resetTracking();
+        state.lastVideoTime = -1;
         state.errorKey = null;
         state.statusKey = "startingCamera";
         render();
@@ -867,31 +1404,52 @@
             },
           });
 
+          if (session !== state.session) {
+            stream.getTracks().forEach((track) => track.stop());
+            return;
+          }
+
           state.stream = stream;
           refs.video.srcObject = stream;
           await refs.video.play();
 
+          if (session !== state.session) return;
+
+          state.isStarting = false;
           state.isRunning = true;
           state.statusKey = "seekingHand";
           render();
 
           const loop = async () => {
-            if (!state.isRunning || !state.hands) return;
+            if (!state.isRunning || !state.hands || session !== state.session) return;
 
-            if (refs.video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+            if (refs.video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+              refs.video.videoWidth > 0 && refs.video.currentTime !== state.lastVideoTime) {
               if (!state.frameBusy) {
                 state.frameBusy = true;
+                state.lastVideoTime = refs.video.currentTime;
                 try {
-                  await state.hands.send({ image: refs.video });
+                  await processFrame(session);
+                } catch (error) {
+                  if (session === state.session) {
+                    console.error("Hand tracking failed", error);
+                    state.errorKey = "recognitionFailed";
+                    stopCamera(false);
+                    state.statusKey = "moduleUnavailable";
+                  }
                 } finally {
                   state.frameBusy = false;
+                  if (!state.isRunning) render();
                 }
               }
             }
 
-            state.raf = requestAnimationFrame(loop);
+            if (state.isRunning && session === state.session) state.raf = requestAnimationFrame(loop);
           };
 
+          stream.getVideoTracks().forEach((track) => track.addEventListener("ended", () => {
+            if (session === state.session) stopCamera();
+          }));
           state.raf = requestAnimationFrame(loop);
         } catch {
           state.errorKey = "cameraStart";
@@ -899,11 +1457,16 @@
           stopCamera(false);
           state.statusKey = "cameraUnavailable";
           render();
+        } finally {
+          state.isStarting = false;
+          render();
         }
       }
 
       function stopCamera(shouldRender = true) {
+        state.session++;
         state.isRunning = false;
+        state.calibrating = false;
 
         if (state.raf !== null) {
           cancelAnimationFrame(state.raf);
@@ -917,10 +1480,8 @@
         state.stream = null;
         refs.video.pause();
         refs.video.srcObject = null;
-        state.frameBusy = false;
-        state.latestResults = null;
-        state.handCount = 0;
-        state.confidence = null;
+        // An in-flight inference owns frameBusy until it completes, including after stop.
+        resetTracking();
         if (!state.errorKey) state.statusKey = "stopped";
 
         drawIdleFrame();
@@ -971,12 +1532,29 @@
         refs.captureButtonLabel.textContent = state.isRunning
           ? copy.stop
           : copy.start;
-        refs.captureButton.disabled = !state.libraryReady || Boolean(state.errorKey);
+        refs.captureButton.disabled = !state.libraryReady || state.isStarting || (!state.isRunning && state.frameBusy);
         refs.captureButton.querySelector(".button-icon").className = state.isRunning
           ? "button-icon stop-icon"
           : "button-icon play-icon";
         refs.saveButtonLabel.textContent = copy.saveFrame;
-        refs.saveButton.disabled = !state.isRunning;
+        refs.saveButton.disabled = !state.isRunning || !state.latestResults;
+
+        refs.trackingLabel.textContent = copy.trackingLabel;
+        refs.trackingToggle.setAttribute("aria-label", copy.trackingLabel);
+        refs.trackingToggle.querySelector('[data-tracking="glove"]').textContent = copy.gloveMode;
+        refs.trackingToggle.querySelector('[data-tracking="bare"]').textContent = copy.bareMode;
+        for (const button of refs.trackingToggle.querySelectorAll("button")) {
+          button.setAttribute("aria-pressed", String(button.dataset.tracking === state.trackingMode));
+        }
+        refs.gloveControls.hidden = state.trackingMode !== "glove";
+        refs.gloveHelp.textContent = state.calibrationMessage ? copy.calibrationDone : copy.gloveHelp;
+        refs.calibrateButton.textContent = state.calibrating ? copy.cancelCalibration : copy.calibrate;
+        refs.calibrateButton.disabled = !state.isRunning || !state.latestResults;
+        refs.resetCalibrationButton.textContent = copy.resetCalibration;
+        refs.resetCalibrationButton.disabled = !state.colorProfiles.length && !state.calibrating;
+        refs.stage.dataset.calibrating = String(state.calibrating);
+        refs.calibrationNotice.hidden = !state.calibrating;
+        refs.calibrationNotice.textContent = copy.calibrationNotice;
 
         refs.statusLabel.textContent = copy.statusLabel;
         refs.statusValue.textContent = state.errorKey
@@ -1015,6 +1593,21 @@
         }
       });
       refs.saveButton.addEventListener("click", saveFrame);
+      refs.trackingToggle.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-tracking]");
+        if (button) setTrackingMode(button.dataset.tracking);
+      });
+      refs.calibrateButton.addEventListener("click", beginCalibration);
+      refs.canvas.addEventListener("click", calibrateAtPoint);
+      refs.resetCalibrationButton.addEventListener("click", () => {
+        state.colorProfiles = [];
+        state.focusRegion = null;
+        state.calibrating = false;
+        state.calibrationMessage = false;
+        resetTracking();
+        if (state.isRunning) state.statusKey = "seekingHand";
+        render();
+      });
       refs.modeToggle.addEventListener("click", (event) => {
         const button = event.target.closest("button[data-mode]");
         if (button) setViewMode(button.dataset.mode);
@@ -1030,6 +1623,7 @@
           drawIdleFrame();
         }
       });
+      window.addEventListener("pagehide", () => stopCamera(false));
 
       render();
       drawIdleFrame();
@@ -1037,17 +1631,7 @@
       loadHandsScript()
         .then(() => {
           if (!window.Hands) throw new Error("hands-unavailable");
-          state.hands = new window.Hands({
-            locateFile: (file) => `${HANDS_ASSETS}${file}`,
-          });
-          state.hands.setOptions({
-            maxNumHands: 2,
-            modelComplexity: 1,
-            minDetectionConfidence: 0.72,
-            minTrackingConfidence: 0.72,
-            selfieMode: false,
-          });
-          state.hands.onResults(handleResults);
+          state.hands = createDetector();
           state.libraryReady = true;
           state.statusKey = "standby";
           render();
